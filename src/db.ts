@@ -40,20 +40,41 @@ export class DatabaseManager {
         await this.db.exec(schema);
     }
 
-    async addPlayer(name: string): Promise<number> {
+    async clearDatabase() {
+        if (!this.db) throw new Error('Database not initialized');
+        await this.db.run('DELETE FROM elo_history');
+        await this.db.run('DELETE FROM matches');
+        await this.db.run('DELETE FROM tournaments');
+        await this.db.run('DELETE FROM heroes');
+        await this.db.run('DELETE FROM players');
+        // Reset sqlite sequences
+        await this.db.run("DELETE FROM sqlite_sequence WHERE name IN ('elo_history', 'matches', 'tournaments', 'heroes', 'players')");
+    }
+
+    async addTournament(name: string, location?: string, date?: string): Promise<number> {
         const result = await this.db!.run(
-            'INSERT INTO players (name, current_elo) VALUES (?, 1500) ON CONFLICT(name) DO NOTHING',
-            [name]
+            'INSERT INTO tournaments (name, location, date) VALUES (?, ?, ?)',
+            [name, location, date]
         );
         return result.lastID!;
     }
 
+    async addPlayer(name: string): Promise<number> {
+        await this.db!.run(
+            'INSERT INTO players (name, current_elo) VALUES (?, 1500) ON CONFLICT(name) DO NOTHING',
+            [name]
+        );
+        const player = await this.db!.get('SELECT id FROM players WHERE name = ?', [name]);
+        return player.id;
+    }
+
     async addHero(name: string, heroClass?: string): Promise<number> {
-        const result = await this.db!.run(
+        await this.db!.run(
             'INSERT INTO heroes (name, class) VALUES (?, ?) ON CONFLICT(name) DO NOTHING',
             [name, heroClass]
         );
-        return result.lastID!;
+        const hero = await this.db!.get('SELECT id FROM heroes WHERE name = ?', [name]);
+        return hero.id;
     }
 
     async recordMatch(match: Match) {
@@ -94,5 +115,37 @@ export class DatabaseManager {
 
     async getRankings() {
         return this.db!.all('SELECT name, current_elo FROM players ORDER BY current_elo DESC');
+    }
+
+    async getRankingsWithHeroAffinity() {
+        // Query to find each player's hero with the most wins
+        const sql = `
+            WITH MatchWins AS (
+                SELECT 
+                    m.winner_id as player_id,
+                    CASE WHEN m.winner_id = m.player1_id THEN m.player1_hero_id ELSE m.player2_hero_id END as hero_id,
+                    COUNT(*) as wins
+                FROM matches m
+                WHERE m.winner_id IS NOT NULL
+                GROUP BY m.winner_id, hero_id
+            ),
+            MaxWins AS (
+                SELECT player_id, MAX(wins) as max_wins
+                FROM MatchWins
+                GROUP BY player_id
+            ),
+            BestHero AS (
+                SELECT mw.player_id, MIN(h.name) as hero_name
+                FROM MatchWins mw
+                JOIN MaxWins mx ON mw.player_id = mx.player_id AND mw.wins = mx.max_wins
+                JOIN heroes h ON mw.hero_id = h.id
+                GROUP BY mw.player_id
+            )
+            SELECT p.name, p.current_elo, IFNULL(bh.hero_name, 'No wins yet') as best_hero
+            FROM players p
+            LEFT JOIN BestHero bh ON p.id = bh.player_id
+            ORDER BY p.current_elo DESC;
+        `;
+        return this.db!.all(sql);
     }
 }
