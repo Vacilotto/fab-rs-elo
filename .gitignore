@@ -1,0 +1,41 @@
+# Project-specific
+fab-elo.db
+to-do
+
+# Dependency directories
+node_modules/
+
+# TypeScript/Build output
+dist/
+lib/
+out/
+build/
+*.tsbuildinfo
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDEs/Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Other files
+plan.md
